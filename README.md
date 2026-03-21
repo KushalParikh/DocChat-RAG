@@ -25,7 +25,7 @@
 
 1.  **Clone the repository**
     ```bash
-    git clone https://github.com/your-username/DocChat-RAG.git
+    git clone https://github.com/KushalParikh/DocChat-RAG.git
     cd DocChat-RAG
     ```
 
