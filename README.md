@@ -56,8 +56,28 @@
 ## ⚠️ Limitations
 *   **Single User Scope**: This project is designed as a portfolio demonstration for a single user. It uses a shared local vector store, meaning that in a concurrent multi-user deployment, users would share the same document context. For a production environment, this would be upgraded to use session-isolated databases (e.g., `chroma_db_{session_id}`).
 
+## 📊 Evaluation
+Uses [Ragas](https://docs.ragas.io/) to measure RAG pipeline quality across four industry-standard metrics:
+
+| Metric | What it Measures |
+|---|---|
+| **Faithfulness** | Does the answer only use information from retrieved chunks? |
+| **Answer Relevancy** | Does the answer actually address the question asked? |
+| **Context Precision** | Was the retrieved context relevant to the question? |
+| **Context Recall** | Did retrieval find all the relevant chunks? |
+
+**How to run:**
+1. Process at least one document in the app first.
+2. Update the test questions in `evaluate.py` to match your document.
+3. Run:
+    ```bash
+    python evaluate.py
+    ```
+Results are printed to the console and saved to `evaluation_results.csv`.
+
 ## 📂 Project Structure
 - `app.py`: Main application logic (UI + RAG Pipeline).
+- `evaluate.py`: Ragas evaluation script for RAG quality metrics.
 - `requirements.txt`: Python dependencies.
 - `.env`: Configuration for API keys (Hidden).
 - `chroma_db/`: Local vector storage folder (Hidden/Temporary).

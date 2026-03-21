@@ -3,6 +3,7 @@
 
 # Local Database (User Data)
 chroma_db/
+evaluation_results.csv
 
 # Python
 __pycache__/
