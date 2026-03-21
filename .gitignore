@@ -1,0 +1,31 @@
+# Secrets (NEVER commit this)
+.env
+
+# Local Database (User Data)
+chroma_db/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Document Files (Don't upload your test docs)
+*.pdf
+*.docx
+*.txt
+*.csv
