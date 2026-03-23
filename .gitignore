@@ -30,3 +30,6 @@ Thumbs.db
 *.docx
 *.txt
 *.csv
+
+# Allow requirements.txt
+!requirements.txt
