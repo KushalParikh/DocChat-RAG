@@ -2,10 +2,14 @@ streamlit
 langchain
 langchain-community
 langchain-google-genai
+langchain-groq
+langchain-experimental>=0.3.0
 chromadb
 pypdf
 python-dotenv
-sentence-transformers
+sentence-transformers>=3.0.0
 python-docx
 ragas
 datasets
+tiktoken>=0.7.0
+numpy

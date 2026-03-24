@@ -7,6 +7,10 @@ Uses the Ragas framework to evaluate the RAG pipeline across four key metrics:
   - Context Precision:  Was the retrieved context relevant to the question?
   - Context Recall:     Did retrieval find all the relevant chunks?
 
+Additional metrics tracked after upgrades:
+  - Chunks per query:   Mean chunks passed to LLM (validates adaptive k)
+  - Prompt size:        Average prompt token count (tracks compression effectiveness)
+
 Usage:
   1. Make sure you have documents processed in chroma_db/ (run the app first).
   2. Update the TEST_DATASET below with questions relevant to YOUR documents.
@@ -14,6 +18,7 @@ Usage:
 """
 
 import os
+import time
 from dotenv import load_dotenv
 from datasets import Dataset
 
@@ -37,13 +42,6 @@ GEMINI_MODEL = "models/gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
 # 2. Test Dataset  (Update these with questions relevant to YOUR documents)
-# ---------------------------------------------------------------------------
-# Each entry needs:
-#   - question:     The user query
-#   - ground_truth: The ideal / expected answer (used for recall & precision)
-#
-# 'answer' and 'contexts' are generated automatically by running the RAG
-# pipeline below, so you only need to provide question + ground_truth.
 # ---------------------------------------------------------------------------
 TEST_DATASET = [
     {
@@ -77,18 +75,34 @@ def get_embedding_model():
 
 def run_rag_pipeline(question: str) -> dict:
     """
-    Run a single question through the same RAG pipeline used by app.py.
-    Returns the generated answer and retrieved context chunks.
+    Run a single question through the upgraded RAG pipeline.
+    Uses the same retriever module as app.py for consistency.
+    Returns the generated answer, retrieved context chunks, and pipeline stats.
     """
     from langchain_community.vectorstores import Chroma
     import google.generativeai as genai
+    from retriever import build_retriever, classify_query_complexity
 
     genai.configure(api_key=GOOGLE_API_KEY)
 
-    # Retrieve relevant chunks
     embeddings = get_embedding_model()
-    db = Chroma(persist_directory=CHROMA_DB_PATH, embedding_function=embeddings)
-    docs = db.similarity_search(question, k=4)
+
+    # Find the first session directory in chroma_db
+    chroma_path = CHROMA_DB_PATH
+    if os.path.isdir(CHROMA_DB_PATH):
+        subdirs = [d for d in os.listdir(CHROMA_DB_PATH)
+                    if os.path.isdir(os.path.join(CHROMA_DB_PATH, d))]
+        if subdirs:
+            chroma_path = os.path.join(CHROMA_DB_PATH, subdirs[0])
+
+    db = Chroma(persist_directory=chroma_path, embedding_function=embeddings)
+
+    # Use the upgraded retriever pipeline
+    start_time = time.time()
+    retriever, k_used = build_retriever(db, embeddings, question)
+    docs = retriever.invoke(question)
+    retrieval_time = time.time() - start_time
+
     contexts = [doc.page_content for doc in docs]
     context_text = "\n\n".join(contexts)
 
@@ -96,6 +110,7 @@ def run_rag_pipeline(question: str) -> dict:
     model = genai.GenerativeModel(GEMINI_MODEL)
     prompt = f"""Answer the question based strictly on the provided context.
 If the answer is not in the context, say "I cannot find the answer in the document."
+Answer concisely in 3 sentences maximum unless the question explicitly requires more.
 
 Context:
 {context_text}
@@ -105,18 +120,32 @@ Question:
 
 Answer:"""
 
+    gen_start = time.time()
     response = model.generate_content(prompt)
+    gen_time = time.time() - gen_start
     answer = response.text
 
-    return {"answer": answer, "contexts": contexts}
+    # Estimate prompt size (rough: 4 chars ≈ 1 token)
+    prompt_tokens = len(prompt) // 4
+
+    return {
+        "answer": answer,
+        "contexts": contexts,
+        "k_used": k_used,
+        "chunks_after_rerank": len(docs),
+        "prompt_tokens": prompt_tokens,
+        "retrieval_time_ms": round(retrieval_time * 1000),
+        "generation_time_ms": round(gen_time * 1000),
+    }
 
 
-def build_evaluation_dataset() -> Dataset:
+def build_evaluation_dataset() -> tuple[Dataset, list[dict]]:
     """Run every test question through the RAG pipeline and build a HuggingFace Dataset."""
     questions = []
     answers = []
     contexts = []
     ground_truths = []
+    pipeline_stats = []
 
     print("Running RAG pipeline on test questions...\n")
     for i, item in enumerate(TEST_DATASET, 1):
@@ -129,8 +158,9 @@ def build_evaluation_dataset() -> Dataset:
         answers.append(result["answer"])
         contexts.append(result["contexts"])
         ground_truths.append(item["ground_truth"])
+        pipeline_stats.append(result)
 
-    return Dataset.from_dict(
+    dataset = Dataset.from_dict(
         {
             "question": questions,
             "answer": answers,
@@ -138,6 +168,8 @@ def build_evaluation_dataset() -> Dataset:
             "ground_truth": ground_truths,
         }
     )
+
+    return dataset, pipeline_stats
 
 
 def main():
@@ -155,7 +187,7 @@ def main():
     print("=" * 60)
 
     # Build dataset by running the pipeline
-    dataset = build_evaluation_dataset()
+    dataset, pipeline_stats = build_evaluation_dataset()
 
     # Configure Ragas to use Gemini via LangChain wrapper
     from langchain_google_genai import ChatGoogleGenerativeAI
@@ -178,9 +210,9 @@ def main():
         llm=evaluator_llm,
     )
 
-    # Display results
+    # Display Ragas results
     print("=" * 60)
-    print("  RESULTS")
+    print("  RAGAS RESULTS")
     print("=" * 60)
     print(f"  Faithfulness:        {result['faithfulness']:.4f}")
     print(f"  Answer Relevancy:    {result['answer_relevancy']:.4f}")
@@ -188,8 +220,30 @@ def main():
     print(f"  Context Recall:      {result['context_recall']:.4f}")
     print("=" * 60)
 
+    # Display pipeline metrics
+    print("\n" + "=" * 60)
+    print("  PIPELINE METRICS (New)")
+    print("=" * 60)
+
+    avg_k = sum(s["k_used"] for s in pipeline_stats) / len(pipeline_stats)
+    avg_chunks = sum(s["chunks_after_rerank"] for s in pipeline_stats) / len(pipeline_stats)
+    avg_prompt = sum(s["prompt_tokens"] for s in pipeline_stats) / len(pipeline_stats)
+    avg_retrieval = sum(s["retrieval_time_ms"] for s in pipeline_stats) / len(pipeline_stats)
+    avg_gen = sum(s["generation_time_ms"] for s in pipeline_stats) / len(pipeline_stats)
+
+    print(f"  Avg k requested:     {avg_k:.1f}")
+    print(f"  Avg chunks to LLM:   {avg_chunks:.1f}")
+    print(f"  Avg prompt tokens:   {avg_prompt:.0f}")
+    print(f"  Avg retrieval time:  {avg_retrieval:.0f}ms")
+    print(f"  Avg generation time: {avg_gen:.0f}ms")
+    print("=" * 60)
+
     # Save detailed results to CSV
     df = result.to_pandas()
+    # Add pipeline stats columns
+    for key in ["k_used", "chunks_after_rerank", "prompt_tokens", "retrieval_time_ms", "generation_time_ms"]:
+        df[key] = [s[key] for s in pipeline_stats]
+
     output_file = "evaluation_results.csv"
     df.to_csv(output_file, index=False)
     print(f"\nDetailed results saved to: {output_file}")

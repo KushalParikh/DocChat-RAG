@@ -4,21 +4,21 @@
 
 ## 🚀 Features
 - **📄 Multi-Format Support**: Upload PDF, DOCX, TXT, and CSV files.
-- **🧠 Local Embeddings**: Uses `sentence-transformers` for free, unlimited, and private vectorization.
-- **⚡ High-Speed Inference**: Powered by Google's latest `gemini-2.5-flash` model.
-- **💬 Conversational Memory**: Remembers context within the chat session.
-- **🌊 Streaming Responses**: Real-time typewriter effect for answers.
+- **⚡ Semantic Caching**: Instant, zero-cost responses for repeated or similarly phrased questions. (NEW)
+- **🧠 Advanced Chunking**: Uses `SemanticChunker` to split documents by natural topic boundaries instead of arbitrary character counts. (NEW)
+- **🎯 Adaptive Retrieval & Reranking**: Dynamically adjusts chunks retrieved based on query complexity and uses a Cross-Encoder to re-score relevance. (NEW)
+- **🗜️ Context Compression**: Filters out irrelevant sentences within chunks before sending to the LLM to save tokens. (NEW)
+- **🛡️ Session-Isolated Data**: Vector stores are scoped to the active session (`chroma_db/<session_id>`) for multi-user safety. (NEW)
+- **📊 Admin Dashboard**: Real-time tracking of cache hit rates, chunks used, and estimated API costs. (NEW)
+- **💡 High-Speed Inference**: Choose between Google's `gemini-2.5-flash` or Groq's high-limit `Llama-3.3-70B` model (Default).
 - **📚 Sources Cited**: Shows the exact document snippets used for the answer.
-- **🛠️ Utility Tools**: 
-    - **Clear Database**: Reset the memory instantly.
-    - **Download History**: Save your conversation as a text file.
-- **🛡️ Cost-Efficient**: Fully optimized for the Free Tier (No Credit Card required).
 
 ## 🛠️ Tech Stack
 - **Frontend**: Streamlit
-- **LLM**: Google Gemini 2.5 Flash (via `google-generativeai`)
+- **LLM**: Groq (Llama-3.3-70B) or Google Gemini 2.5 Flash
 - **Vector DB**: ChromaDB (Local)
 - **Embeddings**: HuggingFace (`all-MiniLM-L6-v2`)
+- **Reranker**: HuggingFace Cross-Encoder (`ms-marco-MiniLM-L-6-v2`)
 - **Orchestration**: LangChain
 
 ## 🏃‍♂️ How to Run (Local)
@@ -34,11 +34,12 @@
     pip install -r requirements.txt
     ```
 
-3.  **Setup API Key**
-    - Get your free key from [Google AI Studio](https://aistudio.google.com/).
+3.  **Setup API Keys**
+    - Get keys from [Groq Console](https://console.groq.com/keys) and [Google AI Studio](https://aistudio.google.com/).
     - Create a `.env` file in the root folder:
       ```
-      GOOGLE_API_KEY=your_key_here
+      GROQ_API_KEY=your_groq_key_here
+      GOOGLE_API_KEY=your_gemini_key_here
       ```
 
 4.  **Run the App**
@@ -47,17 +48,14 @@
     ```
 
 > [!NOTE]
-> **First Run Notice**: When you upload a document for the first time, the system will automatically download the embedding model (~90MB) to your machine. This helps keep your data private and avoids embedding API costs. Subsequent runs will be instant!
+> **First Run Notice**: When you upload a document for the first time, the system will automatically download the embedding and reranker models to your machine. Subsequent runs will be instant!
 
 
 ## 🛡️ Security Note
-*   **Data Privacy**: The documents you upload are processed in memory and stored in a temporary local database. They are not sent to any third-party storage other than the Google Gemini API for processing.
-
-## ⚠️ Limitations
-*   **Single User Scope**: This project is designed as a portfolio demonstration for a single user. It uses a shared local vector store, meaning that in a concurrent multi-user deployment, users would share the same document context. For a production environment, this would be upgraded to use session-isolated databases (e.g., `chroma_db_{session_id}`).
+*   **Data Privacy**: The documents you upload are processed in memory and stored in a temporary local database scoped to your session. They are not sent to any third-party storage other than the Google Gemini API for processing.
 
 ## 📊 Evaluation
-Uses [Ragas](https://docs.ragas.io/) to measure RAG pipeline quality across four industry-standard metrics:
+Uses [Ragas](https://docs.ragas.io/) to measure RAG pipeline quality across industry-standard metrics, plus tracks pipeline efficiency:
 
 | Metric | What it Measures |
 |---|---|
@@ -76,8 +74,11 @@ Uses [Ragas](https://docs.ragas.io/) to measure RAG pipeline quality across four
 Results are printed to the console and saved to `evaluation_results.csv`.
 
 ## 📂 Project Structure
-- `app.py`: Main application logic (UI + RAG Pipeline).
-- `evaluate.py`: Ragas evaluation script for RAG quality metrics.
+- `app.py`: Main application UI and session management.
+- `ingestion.py`: Document deduplication and semantic chunking.
+- `retriever.py`: Adaptive retrieval, reranking, and context compression.
+- `cache.py`: Semantic cache for optimizing duplicate queries.
+- `monitoring.py`: Query logging and Gemini cost estimation.
+- `evaluate.py`: Evaluation script for tracking pipeline metrics.
 - `requirements.txt`: Python dependencies.
-- `.env`: Configuration for API keys (Hidden).
-- `chroma_db/`: Local vector storage folder (Hidden/Temporary).
+- `chroma_db/`: Local vector storage folder (session-scoped).
